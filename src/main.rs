@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::prelude::*;
 use std::fs;
@@ -9,9 +9,11 @@ fn create_file_if_not_exists(file_name: &str) -> Result<File, Box<dyn std::error
     Ok(fs::OpenOptions::new().read(true).write(true).create(true).truncate(true).open(file_name)?)
 }
 
-async fn update_ip(file: &mut File, ip: &str, old_ip: &str) -> Result<(), Box<dyn std::error::Error>> {
+async fn update_ip(file: &mut File, ip: &str, old_ip: &str, valid_record_types: HashSet<String>) -> Result<(), Box<dyn std::error::Error>> {
     update_ip_file(file, ip)?;
-    update_digital_ocean(ip, old_ip).await?;
+    for domain_name in DOMAIN_NAMES {
+        update_digital_ocean(ip, old_ip, domain_name, &valid_record_types).await?;
+    }
     Ok(())
 }
 
@@ -20,7 +22,7 @@ fn update_ip_file(file: &mut File, ip: &str) -> Result<(), Box<dyn std::error::E
     Ok(())
 }
 
-async fn update_digital_ocean(ip: &str, old_ip: &str) -> Result<(), Box<dyn std::error::Error>> {
+async fn update_digital_ocean(ip: &str, old_ip: &str, domain_name: &str, valid_record_types: &HashSet<String>) -> Result<(), Box<dyn std::error::Error>> {
     let token = env::var(TOKEN_VARIABLE_NAME);
     if token.is_err() {
         println!("No token found in environment variables");
@@ -33,7 +35,7 @@ async fn update_digital_ocean(ip: &str, old_ip: &str) -> Result<(), Box<dyn std:
     let mut headers = HeaderMap::new();
     headers.insert("Authorization", format!("Bearer {token}").parse().unwrap());
 
-    let resp = client.get(format!("{API_BASE_URL}/{DOMAIN_NAME}/records"))
+    let resp = client.get(format!("{API_BASE_URL}/{domain_name}/records"))
         .headers(headers.clone())
         .send()
         .await?
@@ -48,26 +50,23 @@ async fn update_digital_ocean(ip: &str, old_ip: &str) -> Result<(), Box<dyn std:
         let record_ip = record.get("data").expect("No data key in record").as_str().expect("data key is not a string").trim();
         let record_id = record.get("id").expect("No id key in record").as_u64().expect("id key is not a number");
         let record_type = record.get("type").expect("No type key in record").as_str().expect("type key is not a string").trim();
-        let b = old_ip == record_ip;
-        let c = record_ip == "75.214.244.204";
-        println!("old ip: {old_ip}, record ip: {record_ip}, === {b}, === {c}");
-        let old_ip_bytes = old_ip.as_bytes();
-        let record_ip_bytes = record_ip.as_bytes();
-        // println!("old ip bytes: {old_ip_bytes:#?}, record ip bytes: {record_ip_bytes:#?}");
-        if old_ip == record_ip {
-            update_record(&client, &headers, record_type, &record_id.to_string(), ip).await?;
+        if !valid_record_types.contains(record_type) {
+            println!("Skipping record for {domain_name} with type {record_type} because it is not recognized as valid");
+            continue;
         }
+        update_record(&client, &headers, record_type, &record_id.to_string(), ip, domain_name).await?;
     }
 
     Ok(())
 }
 
-async fn update_record(client: &reqwest::Client, headers: &HeaderMap, record_type: &str, record_id: &str, ip: &str) -> Result<(), Box<dyn std::error::Error>> {
+async fn update_record(client: &reqwest::Client, headers: &HeaderMap, record_type: &str, record_id: &str, ip: &str, domain_name: &str) -> Result<(), Box<dyn std::error::Error>> {
+    println!("Updating record {record_id} with type {record_type} for domain {domain_name}");
     let mut body = HashMap::new();
     body.insert("data", ip);
     body.insert("type", record_type);
     let res = client
-        .patch(format!("{API_BASE_URL}/{DOMAIN_NAME}/records/{record_id}"))
+        .patch(format!("{API_BASE_URL}/{domain_name}/records/{record_id}"))
         .headers(headers.clone())
         .json(&body)
         .send()
@@ -86,21 +85,34 @@ async fn get_ip() -> Result<String, Box<dyn std::error::Error>> {
     Ok(resp.get("origin").expect("No origin key in response").to_string())
 }
 
-const TOKEN_VARIABLE_NAME: &str = "DIGITAL_OCEAN_TOKEN";
+const TOKEN_VARIABLE_NAME: &str = "DIGITALOCEAN_TOKEN";
 const FILE_NAME: &str = "ip.txt";
-const DOMAIN_NAME: &str = "karschner.studio";
+const DOMAIN_NAMES: [&str; 2] = ["karschner.studio", "ekars.ch"];
 const API_BASE_URL: &str = "https://api.digitalocean.com/v2/domains";
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let args: Vec<String> = env::args().collect();
+
     let ip = get_ip().await?;
     println!("Current IP address is: {}", ip);
-    let old_ip = fs::read_to_string(FILE_NAME)?;
+    let old_ip = fs::read_to_string(FILE_NAME);
+    let old_ip = old_ip.unwrap_or("".to_string()).trim().to_string();
     println!("old ip: {old_ip}");
-    if old_ip != *ip {
+    if old_ip != *ip || (args.len() > 1 && &args[1] == "--force-update") {
+        if old_ip == *ip {
+            println!("old ip matches current, forcing update due to --force-update flag");
+        }
         let mut file = create_file_if_not_exists(FILE_NAME)?;
-        update_ip(&mut file, &ip, &old_ip).await?;
+
+        let valid_record_types = get_valid_record_types();
+        update_ip(&mut file, &ip, &old_ip, valid_record_types).await?;
     }
 
     Ok(())
+}
+
+// List valid record types to target for updates
+fn get_valid_record_types() -> HashSet<String> {
+    HashSet::from(["A".to_string(), "@".to_string()])
 }
