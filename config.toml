@@ -1,0 +1,7 @@
+[[modules]]
+type = "digitalocean"
+ip_storage_path = "ip.txt"
+api_token = "$DIGITALOCEAN_TOKEN"
+valid_record_types = ["A", "@"]
+domain_names = ["karschner.studio", "ekars.ch"]
+debug = true
