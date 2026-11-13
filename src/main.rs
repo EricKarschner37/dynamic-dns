@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::fs;
-use dynamic_dns::modules::{self, digitalocean};
+use dynamic_dns::modules::{self, digitalocean, routeros};
 use serde::Deserialize;
 use std::env::VarError;
 use dynamic_dns::core::{IpValidationMode, Module};
@@ -20,18 +20,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Ok(c) => c,
         Err(e) => return Err(e.get_err())
     };
-    let mods = config.modules.into_iter().map(|module_config| {
-        match module_config {
-            modules::ModuleConfig::DigitalOcean(cfg) => digitalocean::DigitaloceanModule::new(cfg),
-        }
-    });
+    let mods: Vec<modules::ModuleEnum> = config.modules.into_iter().map(|module_config| {
+        modules::ModuleEnum::new(module_config)
+    }).collect();
     let ip = get_ip().await?;
 
     let options = dynamic_dns::core::HandleIpOptions {
-        ip_validation_mode: IpValidationMode::None,
+        ip_validation_mode: IpValidationMode::Local,
     };
 
-    for module in mods {
+    for mut module in mods {
         module.handle_ip(ip.clone(), options.clone()).await.map_err(|e| eprintln!("{:?}", e));
     }
 

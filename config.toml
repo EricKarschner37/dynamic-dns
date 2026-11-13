@@ -5,3 +5,10 @@ api_token = "$DIGITALOCEAN_TOKEN"
 valid_record_types = ["A", "@"]
 domain_names = ["karschner.studio", "ekars.ch"]
 debug = true
+
+[[modules]]
+type = "routeros"
+router_ip = "10.0.0.1"
+username = "admin"
+password = "$ROUTEROS_PW"
+debug = true
