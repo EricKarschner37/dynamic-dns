@@ -270,8 +270,11 @@ use serde::Deserialize;
             password: String,
             #[serde(default="default_port")]
             port: u16,
+            #[serde(default)]
             debug: bool,
+            #[serde(default)]
             local_ip_path: Option<path::PathBuf>,
+            comment_substr: String,
         }
 
         fn default_port() -> u16 {
@@ -405,7 +408,8 @@ use serde::Deserialize;
                 if options.ip_validation_mode == core::IpValidationMode::Local && self.is_local_ip_matching(&new_ip)? {
                     return Ok(core::HandleIpSuccess::NoUpdateNecessary);
                 }
-                let records = self.find_matching_records("[dynamic-dns]")?;
+                let comment_substr = self.config.comment_substr.clone();
+                let records = self.find_matching_records(&comment_substr)?;
                 self.debug(&format!("Matching Records: {:?}", records));
                 let mut updated = 0;
                 for record in records {
@@ -438,6 +442,7 @@ use serde::Deserialize;
 
         #[derive(Deserialize)]
         pub struct DigitaloceanConfig {
+            #[serde(default)]
             ip_storage_path: Option<PathBuf>,
             api_token: String,
             domain_names: Vec<String>,
