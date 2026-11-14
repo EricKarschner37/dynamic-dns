@@ -413,7 +413,8 @@ use serde::Deserialize;
                 self.debug(&format!("Matching Records: {:?}", records));
                 let mut updated = 0;
                 for record in records {
-                    if options.ip_validation_mode == core::IpValidationMode::Actual && record.dst_address.as_ref().is_none_or(|it| new_ip.eq(it)) {
+                    if options.ip_validation_mode != core::IpValidationMode::Actual || record.dst_address.as_ref().is_none_or(|it| !new_ip.eq(it)) {
+                        self.debug(&format!("Updating record: {:?}", record));
                         self.update_record(record, &new_ip)?;
                         updated += 1;
                     }
