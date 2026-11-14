@@ -12,3 +12,5 @@ router_ip = "10.0.0.1"
 username = "admin"
 password = "$ROUTEROS_PW"
 debug = true
+local_ip_path = "ip.routeros.txt"
+comment_substr = "[dynamic-dns]"
