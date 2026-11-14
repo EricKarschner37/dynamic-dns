@@ -313,6 +313,8 @@ use serde::Deserialize;
                 let dst_str = format!("=dst-address={new_ip}");
                 let update_command = vec!["/ip/firewall/nat/set", &id_str, &dst_str];
                 socket.send_command(update_command)?;
+                let resp = &socket.read_sentence()?.concat();
+                self.debug(resp);
                 self.debug(&format!("Updated record {:?}", record));
                 Ok(())
             }
@@ -414,7 +416,7 @@ use serde::Deserialize;
                 let mut updated = 0;
                 for record in records {
                     if options.ip_validation_mode != core::IpValidationMode::Actual || record.dst_address.as_ref().is_none_or(|it| !new_ip.eq(it)) {
-                        self.debug(&format!("Updating record: {:?}", record));
+                        self.debug(&format!("Updating record: {:?} to use dst-address: {new_ip}", record));
                         self.update_record(record, &new_ip)?;
                         updated += 1;
                     }
